@@ -1,0 +1,283 @@
+
+=================================================================================================
+Bank Health capstone - index demonstrations
+Source: sql/05_index_demos.sql
+=================================================================================================
+
+----------------------------------------------------------------------------------------------
+DEMO 1 - idx_fact_complaints_date
+Query: monthly complaint trend for a single year.
+----------------------------------------------------------------------------------------------
+
+DROP INDEX
+--- BEFORE (no index on date_received) ---
+                                                     QUERY PLAN                                                     
+--------------------------------------------------------------------------------------------------------------------
+ Finalize GroupAggregate (actual time=206.068..208.002 rows=12 loops=1)
+   Group Key: (date_trunc('month'::text, (date_received)::timestamp with time zone))
+   Buffers: shared hit=848 read=35788
+   ->  Gather Merge (actual time=206.059..207.988 rows=36 loops=1)
+         Workers Planned: 2
+         Workers Launched: 2
+         Buffers: shared hit=848 read=35788
+         ->  Sort (actual time=202.410..202.412 rows=12 loops=3)
+               Sort Key: (date_trunc('month'::text, (date_received)::timestamp with time zone))
+               Sort Method: quicksort  Memory: 25kB
+               Buffers: shared hit=848 read=35788
+               Worker 0:  Sort Method: quicksort  Memory: 25kB
+               Worker 1:  Sort Method: quicksort  Memory: 25kB
+               ->  Partial HashAggregate (actual time=202.367..202.381 rows=12 loops=3)
+                     Group Key: date_trunc('month'::text, (date_received)::timestamp with time zone)
+                     Batches: 1  Memory Usage: 121kB
+                     Buffers: shared hit=832 read=35788
+                     Worker 0:  Batches: 1  Memory Usage: 121kB
+                     Worker 1:  Batches: 1  Memory Usage: 121kB
+                     ->  Parallel Seq Scan on fact_complaints (actual time=0.230..195.058 rows=49982 loops=3)
+                           Filter: ((date_received >= '2023-01-01'::date) AND (date_received < '2024-01-01'::date))
+                           Rows Removed by Filter: 309226
+                           Buffers: shared hit=832 read=35788
+ Planning:
+   Buffers: shared hit=112 dirtied=3
+ Planning Time: 0.714 ms
+ Execution Time: 208.296 ms
+(27 rows)
+
+CREATE INDEX
+VACUUM
+
+--- AFTER (index on date_received, visibility map clean) ---
+                                                          QUERY PLAN                                                           
+-------------------------------------------------------------------------------------------------------------------------------
+ Sort (actual time=57.655..57.657 rows=12 loops=1)
+   Sort Key: (date_trunc('month'::text, (date_received)::timestamp with time zone))
+   Sort Method: quicksort  Memory: 25kB
+   Buffers: shared hit=6 read=134
+   ->  HashAggregate (actual time=57.637..57.648 rows=12 loops=1)
+         Group Key: date_trunc('month'::text, (date_received)::timestamp with time zone)
+         Batches: 1  Memory Usage: 121kB
+         Buffers: shared hit=6 read=134
+         ->  Index Only Scan using idx_fact_complaints_date on fact_complaints (actual time=0.067..37.883 rows=149945 loops=1)
+               Index Cond: ((date_received >= '2023-01-01'::date) AND (date_received < '2024-01-01'::date))
+               Heap Fetches: 0
+               Buffers: shared hit=6 read=134
+ Planning:
+   Buffers: shared hit=36
+ Planning Time: 0.244 ms
+ Execution Time: 57.698 ms
+(16 rows)
+
+
+Demo 1 result: index kept.
+
+----------------------------------------------------------------------------------------------
+DEMO 2 - idx_fact_bank_quarter_date
+Query: industry-wide total assets at one quarter-end.
+----------------------------------------------------------------------------------------------
+
+DROP INDEX
+--- BEFORE (no index on quarter_end_date) ---
+                                               QUERY PLAN                                                
+---------------------------------------------------------------------------------------------------------
+ Finalize GroupAggregate (actual time=74.182..76.142 rows=1 loops=1)
+   Buffers: shared hit=1057 read=12885
+   ->  Gather (actual time=73.520..76.130 rows=2 loops=1)
+         Workers Planned: 2
+         Workers Launched: 2
+         Buffers: shared hit=1057 read=12885
+         ->  Partial GroupAggregate (actual time=71.389..71.390 rows=1 loops=3)
+               Buffers: shared hit=1057 read=12885
+               ->  Parallel Seq Scan on fact_bank_quarter (actual time=70.288..71.276 rows=1419 loops=3)
+                     Filter: (quarter_end_date = '2026-06-30'::date)
+                     Rows Removed by Filter: 171195
+                     Buffers: shared hit=1057 read=12885
+ Planning:
+   Buffers: shared hit=53
+ Planning Time: 0.247 ms
+ Execution Time: 76.171 ms
+(16 rows)
+
+CREATE INDEX
+VACUUM
+
+--- AFTER (index on quarter_end_date, visibility map clean) ---
+                                                     QUERY PLAN                                                      
+---------------------------------------------------------------------------------------------------------------------
+ GroupAggregate (actual time=1.036..1.037 rows=1 loops=1)
+   Buffers: shared hit=116 read=6
+   ->  Index Scan using idx_fact_bank_quarter_date on fact_bank_quarter (actual time=0.101..0.740 rows=4257 loops=1)
+         Index Cond: (quarter_end_date = '2026-06-30'::date)
+         Buffers: shared hit=116 read=6
+ Planning:
+   Buffers: shared hit=12
+ Planning Time: 0.211 ms
+ Execution Time: 1.058 ms
+(9 rows)
+
+
+Demo 2 result: index kept.
+
+----------------------------------------------------------------------------------------------
+DEMO 3 - idx_fact_complaints_company
+Query: top 20 companies by complaint volume.
+----------------------------------------------------------------------------------------------
+
+DROP INDEX
+--- BEFORE (no index on company_name) ---
+                                                        QUERY PLAN                                                        
+--------------------------------------------------------------------------------------------------------------------------
+ Limit (actual time=130.630..131.184 rows=20 loops=1)
+   Buffers: shared hit=1264 read=35372
+   ->  Sort (actual time=130.628..131.180 rows=20 loops=1)
+         Sort Key: (count(*)) DESC
+         Sort Method: top-N heapsort  Memory: 27kB
+         Buffers: shared hit=1264 read=35372
+         ->  Finalize GroupAggregate (actual time=125.492..130.584 rows=4114 loops=1)
+               Group Key: company_name
+               Buffers: shared hit=1264 read=35372
+               ->  Gather Merge (actual time=125.482..129.063 rows=8350 loops=1)
+                     Workers Planned: 2
+                     Workers Launched: 2
+                     Buffers: shared hit=1264 read=35372
+                     ->  Sort (actual time=122.818..122.990 rows=2783 loops=3)
+                           Sort Key: company_name
+                           Sort Method: quicksort  Memory: 243kB
+                           Buffers: shared hit=1264 read=35372
+                           Worker 0:  Sort Method: quicksort  Memory: 239kB
+                           Worker 1:  Sort Method: quicksort  Memory: 241kB
+                           ->  Partial HashAggregate (actual time=119.142..119.438 rows=2783 loops=3)
+                                 Group Key: company_name
+                                 Batches: 1  Memory Usage: 369kB
+                                 Buffers: shared hit=1248 read=35372
+                                 Worker 0:  Batches: 1  Memory Usage: 369kB
+                                 Worker 1:  Batches: 1  Memory Usage: 369kB
+                                 ->  Parallel Seq Scan on fact_complaints (actual time=0.020..43.239 rows=359208 loops=3)
+                                       Buffers: shared hit=1248 read=35372
+ Planning:
+   Buffers: shared hit=16
+ Planning Time: 0.127 ms
+ Execution Time: 131.224 ms
+(31 rows)
+
+CREATE INDEX
+VACUUM
+
+--- AFTER (index on company_name, visibility map clean) ---
+                                                                         QUERY PLAN                                                                          
+-------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Limit (actual time=73.113..74.534 rows=20 loops=1)
+   Buffers: shared hit=2998 read=964
+   ->  Sort (actual time=73.111..74.529 rows=20 loops=1)
+         Sort Key: (count(*)) DESC
+         Sort Method: top-N heapsort  Memory: 27kB
+         Buffers: shared hit=2998 read=964
+         ->  Finalize GroupAggregate (actual time=15.835..74.009 rows=4114 loops=1)
+               Group Key: company_name
+               Buffers: shared hit=2998 read=964
+               ->  Gather Merge (actual time=15.820..73.129 rows=4271 loops=1)
+                     Workers Planned: 2
+                     Workers Launched: 2
+                     Buffers: shared hit=2998 read=964
+                     ->  Partial GroupAggregate (actual time=0.065..48.136 rows=1424 loops=3)
+                           Group Key: company_name
+                           Buffers: shared hit=2998 read=964
+                           ->  Parallel Index Only Scan using idx_fact_complaints_company on fact_complaints (actual time=0.035..24.076 rows=359208 loops=3)
+                                 Heap Fetches: 0
+                                 Buffers: shared hit=2998 read=964
+ Planning:
+   Buffers: shared hit=32
+ Planning Time: 0.147 ms
+ Execution Time: 74.563 ms
+(23 rows)
+
+
+Demo 3 result: index kept.
+
+----------------------------------------------------------------------------------------------
+DEMO 4 - fact_bank_quarter_assets_sort
+Query: top 20 banks by total assets for one quarter.
+Tried: single-column DESC index on the sort column.
+Tried: composite (quarter_end_date, total_assets_thousands DESC) index.
+----------------------------------------------------------------------------------------------
+
+DROP INDEX
+--- BEFORE (no sort-column index) ---
+                                                        QUERY PLAN                                                         
+---------------------------------------------------------------------------------------------------------------------------
+ Limit (actual time=0.992..0.995 rows=20 loops=1)
+   Buffers: shared hit=122
+   ->  Sort (actual time=0.991..0.992 rows=20 loops=1)
+         Sort Key: total_assets_thousands DESC
+         Sort Method: top-N heapsort  Memory: 26kB
+         Buffers: shared hit=122
+         ->  Index Scan using idx_fact_bank_quarter_date on fact_bank_quarter (actual time=0.010..0.582 rows=4257 loops=1)
+               Index Cond: (quarter_end_date = '2026-06-30'::date)
+               Buffers: shared hit=122
+ Planning:
+   Buffers: shared hit=5
+ Planning Time: 0.093 ms
+ Execution Time: 1.008 ms
+(13 rows)
+
+
+--- AFTER single-column DESC index on total_assets_thousands ---
+CREATE INDEX
+VACUUM
+                                                        QUERY PLAN                                                         
+---------------------------------------------------------------------------------------------------------------------------
+ Limit (actual time=0.947..0.950 rows=20 loops=1)
+   Buffers: shared hit=122
+   ->  Sort (actual time=0.945..0.947 rows=20 loops=1)
+         Sort Key: total_assets_thousands DESC
+         Sort Method: top-N heapsort  Memory: 26kB
+         Buffers: shared hit=122
+         ->  Index Scan using idx_fact_bank_quarter_date on fact_bank_quarter (actual time=0.010..0.549 rows=4257 loops=1)
+               Index Cond: (quarter_end_date = '2026-06-30'::date)
+               Buffers: shared hit=122
+ Planning:
+   Buffers: shared hit=12
+ Planning Time: 0.110 ms
+ Execution Time: 0.962 ms
+(13 rows)
+
+
+--- AFTER composite (quarter_end_date, total_assets_thousands DESC) index ---
+DROP INDEX
+CREATE INDEX
+VACUUM
+                                                      QUERY PLAN                                                      
+----------------------------------------------------------------------------------------------------------------------
+ Limit (actual time=0.043..0.063 rows=20 loops=1)
+   Buffers: shared hit=19 read=3
+   ->  Index Scan using fact_bank_quarter_assets_sort on fact_bank_quarter (actual time=0.042..0.060 rows=20 loops=1)
+         Index Cond: (quarter_end_date = '2026-06-30'::date)
+         Buffers: shared hit=19 read=3
+ Planning:
+   Buffers: shared hit=12
+ Planning Time: 0.115 ms
+ Execution Time: 0.076 ms
+(9 rows)
+
+
+Demo 4 result: both shapes removed. The single-column shape IS chosen, but the
+plan walks the full index filtering by quarter, discarding 800 rows to find 20.
+The composite shape is also chosen and reads the 20 rows directly. Both are
+removed because this query shape is a DirectQuery pattern, and this report is
+Import mode: the Bank Scorecard is answered from VertiPaq, not from PostgreSQL.
+The no-index plan already returns in under 1 ms for the same shape, so the
+write and vacuum cost is not justified even if the report were DirectQuery.
+Reasoning is in findings.md section "Indexes".
+
+DROP INDEX
+----------------------------------------------------------------------------------------------
+SAFETY NET - ensure kept indexes exist and the rejected index does not
+----------------------------------------------------------------------------------------------
+
+CREATE INDEX
+CREATE INDEX
+CREATE INDEX
+DROP INDEX
+
+=================================================================================================
+End index demonstrations.
+=================================================================================================
+
