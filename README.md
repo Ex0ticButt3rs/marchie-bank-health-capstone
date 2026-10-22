@@ -107,7 +107,7 @@ requirements.txt                    Python dependencies
 4. Build `clean.*` from the raw files (host, not container):
 
    ```bash
-   cd src
+   cd src_retired_bc_no_pandas
    python run_all_python_cleaning.py
    cd ..
    ```
@@ -190,7 +190,7 @@ These queries check that:
 ```bash
 docker compose down -v
 docker compose up -d --wait
-cd src && python run_all_python_cleaning.py && cd ..
+cd src_retired_bc_no_pandas && python run_all_python_cleaning.py && cd ..
 docker exec -i bank_health_db sh -c "cd / && psql -U capstone -d bank_health -f /sql/run_all_sql.sql"
 docker exec -i bank_health_db sh -c "cd / && psql -U capstone -d bank_health -f /sql/validate_run_all_sql.sql" > documentation/load_validation_output.txt
 ```
